@@ -1,13 +1,41 @@
-cmake_minimum_required(VERSION 3.14...3.22)
+cmake_minimum_required(VERSION 3.14)
 
-project(flecs_components_cglm VERSION 1.0.0 LANGUAGES C)
+set(LIBRARY_NAME "flecs_components_cglm")
+set(LIBRARY_ALIAS "flecs_hub::components::cglm")
 
-# ---- Include guards ----
+project(${LIBRARY_NAME} VERSION 1.0.0 LANGUAGES C)
+
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
-  message(
-    FATAL_ERROR
-      "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there."
-  )
+  message(FATAL_ERROR "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there.")
+endif()
+
+##################################
+########### LIBRARY ##############
+##################################
+
+file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
+add_library(${LIBRARY_NAME} ${HEADERS} ${SOURCES})
+add_library(${LIBRARY_ALIAS} ALIAS ${LIBRARY_NAME})
+target_include_directories(${LIBRARY_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/include)
+set_target_properties(${LIBRARY_NAME} PROPERTIES C_STANDARD 99)
+
+target_compile_definitions(
+  # TARGET_PROPERTY:TYPE == STATIC_LIBRARY ? ${PROJECT_NAME}_STATIC : ""
+  ${LIBRARY_NAME} PUBLIC $<$<STREQUAL:$<TARGET_PROPERTY:${PROJECT_NAME},TYPE>,STATIC_LIBRARY>:;${PROJECT_NAME}_STATIC>
+)
+
+##################################
+########## DEPENDENCIES ##########
+##################################
+
+get_target_property(BUILD_LIBRARY_TYPE ${LIBRARY_NAME} TYPE)
+if(BUILD_LIBRARY_TYPE STREQUAL "STATIC_LIBRARY")
+  set(STR_IS_STATIC_LIBRARY "ON")
+  set(STR_IS_SHARED_LIBRARY "OFF")
+else()
+  set(STR_IS_STATIC_LIBRARY "OFF")
+  set(STR_IS_SHARED_LIBRARY "ON") 
 endif()
 
 include(cmake/get_cpm.cmake)
@@ -15,31 +43,21 @@ include(cmake/get_cpm.cmake)
 CPMAddPackage(
   VERSION 3.2.8
   GITHUB_REPOSITORY SanderMertens/flecs
-  OPTIONS "FLECS_SHARED_LIBS OFF"
-          "FLECS_SHARED OFF"
+  OPTIONS "FLECS_STATIC ${STR_IS_STATIC_LIBRARY}"
+          "FLECS_SHARED ${STR_IS_SHARED_LIBRARY}"
+)
+target_link_libraries(${LIBRARY_NAME} PUBLIC
+  # TARGET_PROPERTY:TYPE == STATIC_LIBRARY ? flecs::flecs_static : flecs::flecs
+  $<IF:$<STREQUAL:$<TARGET_PROPERTY:${PROJECT_NAME},TYPE>,STATIC_LIBRARY>,flecs::flecs_static,flecs::flecs>
 )
 
 CPMAddPackage(
   VERSION 0.9.1
   GITHUB_REPOSITORY recp/cglm
-  OPTIONS "CGLM_SHARED OFF"
-          "CGLM_STATIC ON"
+  OPTIONS "CGLM_STATIC ${STR_IS_STATIC_LIBRARY}"
+          "CGLM_SHARED ${STR_IS_SHARED_LIBRARY}"
           "CGLM_USE_C99 ON"
 )
-
-file(GLOB_RECURSE headers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")
-file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
-
-add_library(${PROJECT_NAME} ${headers} ${sources})
-add_library(flecs_hub::components_cglm ALIAS ${PROJECT_NAME})
-
-set_target_properties(${PROJECT_NAME} PROPERTIES C_STANDARD 99)
-
-target_link_libraries(${PROJECT_NAME} PUBLIC flecs::flecs_static cglm)
-
-target_include_directories(${PROJECT_NAME} PUBLIC ${cglm_SOURCE_DIR}/include/cglm)
-target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/include)
-
-target_compile_definitions(
-  ${PROJECT_NAME} PUBLIC $<$<STREQUAL:$<TARGET_PROPERTY:${PROJECT_NAME},TYPE>,STATIC_LIBRARY>:;${PROJECT_NAME}_STATIC>
-)
+target_link_libraries(${LIBRARY_NAME} PUBLIC cglm)
+# In bake_config.h, #include <cglm.h> is used
+target_include_directories(${LIBRARY_NAME} PUBLIC ${cglm_SOURCE_DIR}/include/cglm)
